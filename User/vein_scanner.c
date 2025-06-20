@@ -8,10 +8,13 @@
  *******************************************************************************/
 
 #include "vein_scanner.h"
+#include "debug.h"
+#include "power_control.h"
 
 /* Variables */
-uint32_t auto_off_timer = 0;  // Timer for auto-off functionality
-uint8_t led_state = LED_OFF;  // Current LED state (on/off)
+uint32_t start_vein_counter = 0;              // Counter for LED on duration
+const uint32_t VEIN_AUTO_OFF_COUNETER = 6000; // // 6000 * 1ms = 30 seconds for auto-off
+uint8_t led_state = LED_OFF;                  // Current LED state (on/off)
 
 /*********************************************************************
  * @fn      vein_scanner_init
@@ -20,45 +23,42 @@ uint8_t led_state = LED_OFF;  // Current LED state (on/off)
  *
  * @return  none
  */
-void vein_scanner_init(void) {
+void vein_scanner_init(void)
+{
     GPIO_InitTypeDef GPIO_InitStructure;
-    
+
     // Enable GPIOA and AFIO clocks
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_AFIO, ENABLE);
-    
+
     // Make sure there's no remapping affecting PA4
     GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, DISABLE);
-    
+
     // Configure PA4 as digital output
     GPIO_InitStructure.GPIO_Pin = VEIN_OUT_PIN;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;  // Push-pull output
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP; // Push-pull output
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(VEIN_OUT_PORT, &GPIO_InitStructure);
-    
+
     // Force reset the pin first to ensure a clean state
     GPIOA->BCR = VEIN_OUT_PIN;
-    
-    // Initialize state
-    auto_off_timer = 0;
+    // Set initial state to off
     led_state = LED_OFF;
-    
+
     // Turn off the vein scanner LED initially
     GPIO_ResetBits(VEIN_OUT_PORT, VEIN_OUT_PIN);
-    
+
     printf("Vein scanner LED initialized with simple on/off control (PA4)\r\n");
-    
+
     // Debug: Check if pin is properly configured
     uint8_t port_config = (GPIOA->CFGLR >> (4 * 4)) & 0xF; // Get configuration for PA4
     printf("Debug - PA4 configuration: 0x%02X (should be 0x03 for output push-pull)\r\n", port_config);
-    
+
     // Test toggle to verify hardware
     printf("Performing LED test...\r\n");
     GPIO_SetBits(VEIN_OUT_PORT, VEIN_OUT_PIN);   // Turn on
-    Delay_Ms(500);                               // 500ms delay
+    Delay_Ms(100);                               // 500ms delay
     GPIO_ResetBits(VEIN_OUT_PORT, VEIN_OUT_PIN); // Turn off    printf("LED test complete. Did you see the LED flash?\r\n");
 }
-
-// Brightness related functions removed - now using simple on/off control
 
 /*********************************************************************
  * @fn      vein_on
@@ -67,21 +67,21 @@ void vein_scanner_init(void) {
  *
  * @return  none
  */
-void vein_on(void) {
+void vein_on(void)
+{
+    if (led_state == LED_ON)
+    {
+        printf("Vein scanner LED is already ON\r\n");
+        return; // Already on, no action needed
+    }
+    start_vein_counter = counterTimer;
     // Turn on LED - explicit set PA4 high
     GPIO_SetBits(VEIN_OUT_PORT, VEIN_OUT_PIN);
     led_state = LED_ON;
-    
-    // Set auto-off timer (30 seconds)
-    auto_off_timer = 100;  // 30 seconds (600 * 50ms)
-    
     // Debug output
-    printf("Vein scanner LED turned ON (PA%d, pin %d) for 30 seconds\r\n", 
-           (VEIN_OUT_PORT == GPIOA) ? 'A'-'A' : ((VEIN_OUT_PORT == GPIOB) ? 'B'-'A' : ((VEIN_OUT_PORT == GPIOC) ? 'C'-'A' : 'D'-'A')),
+    printf("Vein scanner LED turned ON (PA%d, pin %d) for 30 seconds\r\n",
+           (VEIN_OUT_PORT == GPIOA) ? 'A' - 'A' : ((VEIN_OUT_PORT == GPIOB) ? 'B' - 'A' : ((VEIN_OUT_PORT == GPIOC) ? 'C' - 'A' : 'D' - 'A')),
            __builtin_ctz(VEIN_OUT_PIN));
-    
-    // Force set to make sure
-    GPIOA->BSHR = VEIN_OUT_PIN;
 }
 
 /*********************************************************************
@@ -91,19 +91,21 @@ void vein_on(void) {
  *
  * @return  none
  */
-void vein_off(void) {
+void vein_off(void)
+{
+    if (led_state == LED_OFF)
+    {
+        printf("Vein scanner LED is already OFF\r\n");
+        return; // Already off, no action needed
+    }
     // Turn off LED - explicit reset PA4 low
     GPIO_ResetBits(VEIN_OUT_PORT, VEIN_OUT_PIN);
     led_state = LED_OFF;
-    auto_off_timer = 0;  // Cancel auto-off timer
-    
+
     // Debug output
-    printf("Vein scanner LED turned OFF (PA%d, pin %d)\r\n", 
-           (VEIN_OUT_PORT == GPIOA) ? 'A'-'A' : ((VEIN_OUT_PORT == GPIOB) ? 'B'-'A' : ((VEIN_OUT_PORT == GPIOC) ? 'C'-'A' : 'D'-'A')),
+    printf("Vein scanner LED turned OFF (PA%d, pin %d)\r\n",
+           (VEIN_OUT_PORT == GPIOA) ? 'A' - 'A' : ((VEIN_OUT_PORT == GPIOB) ? 'B' - 'A' : ((VEIN_OUT_PORT == GPIOC) ? 'C' - 'A' : 'D' - 'A')),
            __builtin_ctz(VEIN_OUT_PIN));
-    
-    // Force reset to make sure
-    GPIOA->BCR = VEIN_OUT_PIN;
 }
 
 /*********************************************************************
@@ -114,13 +116,27 @@ void vein_off(void) {
  *
  * @return  none
  */
-void vein_toggle(void) {
+void vein_toggle(void)
+{
     // Toggle LED state
-    if (led_state == LED_ON) {
+    if (led_state == LED_ON)
+    {
         vein_off();
-    } else {
+    }
+    else
+    {
         vein_on();
     }
+}
+void f_vein_off(void)
+{
+    GPIO_ResetBits(VEIN_OUT_PORT, VEIN_OUT_PIN);
+    led_state = LED_OFF;
+}
+void f_vein_on(void)
+{
+    GPIO_SetBits(VEIN_OUT_PORT, VEIN_OUT_PIN);
+    led_state = LED_ON;
 }
 
 /*********************************************************************
@@ -131,18 +147,21 @@ void vein_toggle(void) {
  *
  * @return  none
  */
-void vein_timer_update(void) {
+void vein_timer_update(void)
+{
     // Check if LED is on and auto-off timer is set
-    if (led_state == LED_ON && auto_off_timer > 0) {
-        // Decrement timer
-        auto_off_timer--;
-        
-        // Check if timer has expired
-        if (auto_off_timer == 0) {
-            vein_off();
+    if (led_state == LED_ON && start_vein_counter > 0)
+    {
+        // Check if the auto-off time has been reached
+        if ((counterTimer - start_vein_counter) >= VEIN_AUTO_OFF_COUNETER)
+        {
+            vein_off(); // Turn off LED after 30 seconds
             printf("Vein scanner LED auto-off after 30 seconds\r\n");
+            start_vein_counter = 0; // Reset counter
         }
+        power_timer_counter = 10000; // Reset power control timer
     }
+
 }
 
 // Preview and brightness control functions removed - using simple on/off control
@@ -154,24 +173,25 @@ void vein_timer_update(void) {
  *
  * @return  none
  */
-void vein_test(void) {
+void vein_test(void)
+{
     printf("=== VEIN LED TEST START ===\r\n");
-    
+
     // Direct port manipulation for testing
     printf("Setting PA4 HIGH directly\r\n");
-    GPIOA->BSHR = GPIO_Pin_4;  // Set PA4 high
-    Delay_Ms(1000);            // 1 second on
-    
+    GPIOA->BSHR = GPIO_Pin_4; // Set PA4 high
+    Delay_Ms(1000);           // 1 second on
+
     printf("Setting PA4 LOW directly\r\n");
-    GPIOA->BCR = GPIO_Pin_4;   // Set PA4 low
-    Delay_Ms(1000);            // 1 second off
-    
+    GPIOA->BCR = GPIO_Pin_4; // Set PA4 low
+    Delay_Ms(1000);          // 1 second off
+
     printf("Setting PA4 HIGH using GPIO_SetBits\r\n");
     GPIO_SetBits(GPIOA, GPIO_Pin_4);
-    Delay_Ms(1000);            // 1 second on
-    
+    Delay_Ms(1000); // 1 second on
+
     printf("Setting PA4 LOW using GPIO_ResetBits\r\n");
     GPIO_ResetBits(GPIOA, GPIO_Pin_4);
-    
+
     printf("=== VEIN LED TEST COMPLETE ===\r\n");
 }

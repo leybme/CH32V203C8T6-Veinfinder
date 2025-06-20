@@ -23,6 +23,7 @@
 #include "buttons.h"
 #include "power_control.h"
 #include "vein_scanner.h"
+#include "sensor.h"
 
 /* Global typedef */
 
@@ -32,10 +33,11 @@
 /* Function prototypes */
 void system_init(void);
 void check_button_long_press(void);
+void buttons_handle(void);
+void proximity_sensor_handle(void);
+void vein_handle_pwm(uint8_t duty_cycle);
 
-/* Global Variable */
-static uint32_t btn_output_press_duration = 0; // Counter for button long press
-
+int8_t vein_intensity = 1; // Global variable to track vein intensity (0-255)
 /*********************************************************************
  * @fn      main
  *
@@ -44,15 +46,17 @@ static uint32_t btn_output_press_duration = 0; // Counter for button long press
  * @return  none
  */
 int main(void)
-{ // Initialize system components
+{
+    // Initialize system components
+
     system_init();
+    Delay_Ms(500);        // Delay for system not power up immediately
     power_control_init(); // Initialize SYS_EN pin and turn system on
-    led_init();
+    led_init();           // Initialize indicator LEDs
     buttons_init();
+    Sensor_Init(); // Initialize proximity sensor
     vein_scanner_init();
-
     printf("=== Running LED tests at startup ===\r\n");
-
     all_leds_on();
     Delay_Ms(500); // 1 second delay
     all_leds_off();
@@ -60,28 +64,90 @@ int main(void)
     // vein_test();
     while (1)
     {
-        printf("Buttons initialized. BTN_L=PB10, BTN_R=PB11, BTN_OUT=PA9\r\n");
-        // Main application loop    while (1) {    // Read button states
+        // vein_handle_pwm(vein_intensity);
+        buttons_handle(); // Handle button presses
+        // Update vein scanner timer (for auto-off after 30 seconds)
+        vein_timer_update();
+        chase_leds(); // Chase LEDs for visual effect
+        proximity_sensor_handle();
+        // Delay to avoid flooding the console
+        Delay_Ms(1);
+        counterTimer++; // Increment global counter for mimic millisecond timer
+       power_timer_counter--; // Decrement power control timer
+
+        // Check if power control timer has reached zero
+        if (power_timer_counter == 0)
+        {
+            printf("Power control timer expired, turning off system...\r\n");
+            system_off(); // Turn off system if timer expires
+        }
+
+    }
+}
+void buttons_handle()
+{
+uint32_t current_counter = counterTimer;    // Get current time from global counter
+    static uint32_t last_handle_counter = 0;    // Last time buttons were handled
+
+    static const uint16_t DELAY_COUNTER = 10;    // 100ms delay for button handling
+    static const uint8_t VALID_PRESS_COUNT = 3; // 3 continuous triggers for valid press
+    // Button press counters for validation
+    static uint8_t btn_left_count = 0;
+    static uint8_t btn_right_count = 0;
+    static uint8_t btn_output_count = 0;
+
+    if (current_counter - last_handle_counter > DELAY_COUNTER)
+    {
+        last_handle_counter = current_counter;
+        // Handle button states
         uint8_t btn_left = read_btn_left();
         uint8_t btn_right = read_btn_right();
         uint8_t btn_output = read_btn_output();
 
-        // Check if both left and right buttons are pressed simultaneously - turn off system
-        if (btn_left == 0 && btn_right == 0)
+        // Count continuous button presses
         {
-            // Both left and right buttons pressed - turn off system
+            if (btn_left == 0)
+            {
+                btn_left_count++;
+            }
+            else
+            {
+                btn_left_count = 0;
+            }
+
+            if (btn_right == 0)
+            {
+                btn_right_count++;
+            }
+            else
+            {
+                btn_right_count = 0;
+            }
+
+            if (btn_output == 0)
+            {
+                btn_output_count++;
+            }
+            else
+            {
+                btn_output_count = 0;
+            }
+        }
+
+        // Check for valid button presses (5 continuous triggers)
+        if (btn_left_count >= VALID_PRESS_COUNT && btn_right_count >= VALID_PRESS_COUNT)
+        {
             led_on(LED_PIN_1);
             led_on(LED_PIN_5);
             printf("Left and right buttons pressed simultaneously - Shutting down system\r\n");
             system_off(); // Turn off system
         }
-        else if (btn_left == 0)
+        else if (btn_left_count >= VALID_PRESS_COUNT)
         {
-            // Left button pressed - just turn on indicator LED
             led_on(LED_PIN_1);
             printf("Left button pressed\r\n");
         }
-        else if (btn_right == 0)
+        else if (btn_right_count >= VALID_PRESS_COUNT)
         {
             // Right button pressed - just turn on indicator LED
             led_on(LED_PIN_5);
@@ -89,30 +155,57 @@ int main(void)
         }
 
         // Check for output button press (controls vein scanner LED and system power)
-        if (btn_output == 0)
+        if (btn_output_count >= VALID_PRESS_COUNT)
         {
             // Output button pressed, turn on LED 3
             led_on(LED_PIN_3);
-
-            // Count duration for long press detection
-            btn_output_press_duration++;
-            vein_on();
-
-            // Reset press duration counter when button is released
-            btn_output_press_duration = 0;
+            vein_toggle(); // Toggle vein scanner LED state
+            Delay_Ms(1000);
         }
+    }
+}
+void proximity_sensor_handle(void)
+{
+    // Handle proximity sensor logic here
+    // This function can be called periodically to check sensor state
+    static const uint32_t PROXIMITY_CHECK_INTERVAL_COUNTER = 5; // Check every 5 iterations (5 * 5ms = 25ms)
+    static const uint16_t PROXIMITY_THRESHOLD = 200;            // Threshold for proximity detection
 
-        // Update vein scanner timer (for auto-off after 30 seconds)
-        vein_timer_update();
+    static uint8_t proximity_state_detected = 0; // 0 = off, 1 = on
+    static uint32_t last_check_counter = 0;      // Last time proximity sensor was checked
+    uint32_t current_counter = counterTimer;     // Get current time from global counter
+    if (current_counter - last_check_counter > PROXIMITY_CHECK_INTERVAL_COUNTER)
+    {
+        last_check_counter = current_counter; // Update last check time
+    }
+    else
+    {
+        return; // Skip this iteration if not time to check
+    }
+    uint16_t current_proximity_value = Sensor_ReadAnalog(); // Read the current proximity sensor value
+    proximity_state_detected = (current_proximity_value < PROXIMITY_THRESHOLD) ? 1 : 0;
+    if(proximity_state_detected)
+    {
+        start_vein_counter = counterTimer; // Start the vein scanner timer when proximity is detected
+    }
 
-        // If no button is pressed, run the normal LED chase
-        if (btn_left != 0 && btn_right != 0 && btn_output != 0)
+
+
+    if (proximity_state_detected != last_proximity_state_detected)
+    {
+        last_proximity_state_detected = proximity_state_detected;
+        if (proximity_state_detected)
         {
-            chase_leds();
+            // Proximity detected, turn on vein scanner LED
+            vein_on();
+            printf("Proximity detected, turning on vein scanner LED\r\n");
         }
-
-        // Delay to avoid flooding the console
-        Delay_Ms(50);
+        else
+        {
+            // No proximity detected, turn off vein scanner LED
+            vein_off();
+            printf("No proximity detected, turning off vein scanner LED\r\n");
+        }
     }
 }
 
@@ -134,4 +227,18 @@ void system_init(void)
     printf("SystemClk:%d\r\n", SystemCoreClock);
     printf("ChipID:%08x\r\n", DBGMCU_GetCHIPID());
     printf("System initialized\r\n");
+}
+void vein_handle_pwm(uint8_t duty_cycle)
+{
+    static uint8_t counter = 0;
+    counter++;
+    counter = counter % 10;
+    if (counter >= duty_cycle)
+    {
+        f_vein_off(); // Turn off LED
+    }
+    else
+    {
+        f_vein_on(); // Turn on LED
+    }
 }

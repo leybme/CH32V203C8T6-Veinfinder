@@ -17,18 +17,19 @@
  *
  * @return  none
  */
-void led_init(void) {
+void led_init(void)
+{
     GPIO_InitTypeDef GPIO_InitStructure;
-    
+
     // Enable GPIOB clock
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
-    
+
     // Configure LED pins
     GPIO_InitStructure.GPIO_Pin = LED_PINS;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
     GPIO_Init(LED_PORT, &GPIO_InitStructure);
-    
+
     // Initially turn off all LEDs
     GPIO_Write(LED_PORT, GPIO_ReadOutputData(LED_PORT) & ~LED_PINS);
 }
@@ -40,7 +41,8 @@ void led_init(void) {
  *
  * @return  none
  */
-void toggle_leds(void) {
+void toggle_leds(void)
+{
     uint16_t current = GPIO_ReadOutputData(LED_PORT);
     uint16_t next = current ^ LED_PINS;
     GPIO_Write(LED_PORT, next);
@@ -55,7 +57,8 @@ void toggle_leds(void) {
  *
  * @return  none
  */
-void led_on(uint16_t led_pin) {
+void led_on(uint16_t led_pin)
+{
     GPIO_WriteBit(LED_PORT, led_pin, Bit_SET);
 }
 
@@ -68,7 +71,8 @@ void led_on(uint16_t led_pin) {
  *
  * @return  none
  */
-void led_off(uint16_t led_pin) {
+void led_off(uint16_t led_pin)
+{
     GPIO_WriteBit(LED_PORT, led_pin, Bit_RESET);
 }
 
@@ -79,7 +83,8 @@ void led_off(uint16_t led_pin) {
  *
  * @return  none
  */
-void all_leds_off(void) {
+void all_leds_off(void)
+{
     GPIO_Write(LED_PORT, GPIO_ReadOutputData(LED_PORT) & ~LED_PINS);
 }
 
@@ -90,7 +95,8 @@ void all_leds_off(void) {
  *
  * @return  none
  */
-void all_leds_on(void) {
+void all_leds_on(void)
+{
     GPIO_Write(LED_PORT, GPIO_ReadOutputData(LED_PORT) | LED_PINS);
 }
 
@@ -102,16 +108,27 @@ void all_leds_on(void) {
  *
  * @return  none
  */
-void chase_leds(void) {
+void chase_leds(void)
+{
+    static uint16_t delay_counter = 0; // Counter for delay
+    delay_counter++;
+    if (delay_counter < 100)
+    {
+        return; // Delay for 100 iterations before changing state
+    }
+    delay_counter = 0; // Reset delay counter
     uint16_t led_pins[5] = {LED_PIN_5, LED_PIN_4, LED_PIN_3, LED_PIN_2, LED_PIN_1};
-    
-    // Turn off all LEDs first
-    all_leds_off();
-    
-    // Light each LED in sequence (reversed order)
-    for (int i = 0; i < 5; i++) {
-        led_on(led_pins[i]);
-        Delay_Ms(CHASE_DELAY_MS);
-        led_off(led_pins[i]);
+    static uint8_t counter = 0;
+    counter++;                   // Increment counter to change LED state
+    counter = counter % 10;      // Cycle through 0-9 for 5 LEDs (0-4 for on/off state)
+    uint8_t state = counter % 2; // 0 or 1 for on/off state
+    if (state == 1)
+    {
+        led_off(led_pins[counter / 2]);
+    }
+    else
+    {
+
+        led_on(led_pins[counter / 2]);
     }
 }

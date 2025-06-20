@@ -44,6 +44,7 @@ void Delay_Us(uint32_t n);
 void Delay_Ms(uint32_t n);
 void USART_Printf_Init(uint32_t baudrate);
 void SDI_Printf_Enable(void);
+extern volatile uint32_t counterTimer;            // Global counter for mimic millisecond timer (5ms resolution) 200 counts = 1 second
 
 #if(DEBUG)
   #define PRINT(format, ...)    printf(format, ##__VA_ARGS__)

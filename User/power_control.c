@@ -16,6 +16,9 @@
  *
  * @return  none
  */
+uint32_t power_timer_counter = 10000; // Counter for power control timer
+
+
 void power_control_init(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure;

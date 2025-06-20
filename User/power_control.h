@@ -20,5 +20,6 @@
 void power_control_init(void);
 void system_on(void);
 void system_off(void);
+extern uint32_t power_timer_counter; // Counter for power control timer
 
 #endif /* __POWER_CONTROL_H */

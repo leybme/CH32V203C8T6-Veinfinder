@@ -14,7 +14,7 @@
 
 static uint8_t  p_us = 0;
 static uint16_t p_ms = 0;
-
+volatile uint32_t counterTimer = 0;            // Global counter for mimic millisecond timer (5ms resolution) 200 counts = 1 second
 #define DEBUG_DATA0_ADDRESS  ((volatile uint32_t*)0xE0000380)
 #define DEBUG_DATA1_ADDRESS  ((volatile uint32_t*)0xE0000384)
 

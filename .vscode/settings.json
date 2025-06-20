@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.md": "markdown",
+        "indicator_led.h": "c",
+        "debug.h": "c"
+    }
+}

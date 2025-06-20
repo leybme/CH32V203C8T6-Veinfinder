@@ -26,6 +26,7 @@
 /* External variables */
 extern uint32_t auto_off_timer;    // Timer for auto-off functionality
 extern uint8_t led_state;          // Current LED state (on/off)
+extern uint32_t start_vein_counter; // Counter for LED on duration
 
 /* Function prototypes */
 void vein_scanner_init(void);
@@ -34,5 +35,8 @@ void vein_off(void);  // Turn off LED
 void vein_toggle(void); // Toggle LED state
 void vein_timer_update(void); // Update timer for auto-off functionality
 void vein_test(void); // Test function to directly toggle vein LED
+void f_vein_on(void); // Function to turn on LED
+void f_vein_off(void); // Function to turn off LED
+
 
 #endif /* __VEIN_SCANNER_H */
